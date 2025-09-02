@@ -1,3 +1,31 @@
 fn main() {
-    tauri_build::build()
+    // najpierw kompilujemy C++ (np. hello.cpp)
+    let mut build_cpp = cc::Build::new();
+    build_cpp
+        .cpp(true)
+        .file("native/hello.cpp")
+        .flag_if_supported("-std=c++17");
+    build_cpp.compile("hello");
+
+    // następnie Objective-C++ (ScreenCaptureKit)
+    let mut build_objcpp = cc::Build::new();
+    build_objcpp
+        .cpp(true)
+        .file("native/sources.mm")
+        .flag_if_supported("-std=c++17")
+        .flag_if_supported("-fobjc-arc");
+    build_objcpp.compile("sources");
+
+    println!("cargo:rerun-if-changed=native/hello.h");
+    println!("cargo:rerun-if-changed=native/hello.cpp");
+    println!("cargo:rerun-if-changed=native/sources.h");
+    println!("cargo:rerun-if-changed=native/sources.mm");
+
+    // Link wymaganych frameworków macOS
+    println!("cargo:rustc-link-lib=framework=ScreenCaptureKit");
+    println!("cargo:rustc-link-lib=framework=AppKit");
+    println!("cargo:rustc-link-lib=framework=CoreGraphics");
+
+    // potem dopiero generujemy build info dla tauri
+    tauri_build::build();
 }
