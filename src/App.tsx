@@ -1,6 +1,7 @@
 import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
+import { downloadDir, join } from "@tauri-apps/api/path";
 import "./App.css";
 
 function App() {
@@ -10,6 +11,7 @@ function App() {
   const [selected, setSelected] = useState<{ kind: string; id: string } | null>(
     null
   );
+  const [isCapturing, setIsCapturing] = useState(false);
 
   async function greet() {
     setGreetMsg(await invoke("hello_cpp"));
@@ -22,6 +24,36 @@ function App() {
       setSources(result);
     } catch (e: any) {
       setError(e?.toString?.() ?? "Unknown error");
+    }
+  }
+
+  async function start() {
+    if (!selected) {
+      setError("Select a source first");
+      return;
+    }
+    setError(null);
+    try {
+      // Save into Downloads/scribo (native ensures folder exists)
+      const dir = await downloadDir();
+      const base = await join(dir, "scribo");
+      const file = await join(base, `capture-${Date.now()}.wav`);
+      await invoke("start_capture", {
+        kind: selected.kind,
+        id: selected.id,
+        outPath: file,
+      });
+      setIsCapturing(true);
+    } catch (e: any) {
+      setError(e?.toString?.() ?? "Unknown error");
+    }
+  }
+
+  async function stop() {
+    try {
+      await invoke("stop_capture");
+    } finally {
+      setIsCapturing(false);
     }
   }
 
@@ -131,6 +163,17 @@ function App() {
           Selected: {selected.kind} #{selected.id}
         </p>
       )}
+      <div className="row" style={{ gap: 8, marginTop: 16 }}>
+        <button onClick={start} disabled={!selected || isCapturing}>
+          Start capture
+        </button>
+        <button onClick={stop} disabled={!isCapturing}>
+          Stop capture
+        </button>
+        {isCapturing && (
+          <span>Recording to Downloads/scribo (timestamped)…</span>
+        )}
+      </div>
     </main>
   );
 }
