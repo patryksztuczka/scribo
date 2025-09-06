@@ -19,6 +19,7 @@ static std::atomic<bool> g_clientFormatSet(false);
 static std::atomic<bool> g_micClientFormatSet(false);
 static AVAudioEngine *g_micEngine = nil;
 static ExtAudioFileRef g_micFile = NULL;
+static NSString *g_lastOutPath = nil; // full path to app wav
 
 static char *dup_cstr(const char *s) {
   if (!s) {
@@ -293,6 +294,10 @@ bool sc_start_capture(const char *kind, const char *id, const char *out_path,
     NSString *kindStr = [NSString stringWithUTF8String:kind];
     NSString *idStr = [NSString stringWithUTF8String:id];
     NSString *path = [NSString stringWithUTF8String:out_path];
+    if (g_lastOutPath) {
+      g_lastOutPath = nil;
+    }
+    g_lastOutPath = [path copy];
 
     __block SCShareableContent *content = nil;
     __block NSError *err = nil;
@@ -523,6 +528,249 @@ void sc_stop_capture() {
     }
     g_writer = nil;
     g_clientFormatSet.store(false);
+    // Offline mix app + mic into -mix.wav
+    @try {
+      if (g_lastOutPath) {
+        NSString *baseNoExt = [g_lastOutPath stringByDeletingPathExtension];
+        NSString *appPath = g_lastOutPath;
+        NSString *micPath = [baseNoExt stringByAppendingString:@"-mic.wav"];
+        NSString *mixPath = [baseNoExt stringByAppendingString:@"-mix.wav"];
+
+        // Open inputs
+        ExtAudioFileRef appIn = NULL, micIn = NULL, outFile = NULL;
+        CFURLRef appUrl = (__bridge CFURLRef)[NSURL fileURLWithPath:appPath];
+        CFURLRef micUrl = (__bridge CFURLRef)[NSURL fileURLWithPath:micPath];
+        OSStatus stA = ExtAudioFileOpenURL(appUrl, &appIn);
+        OSStatus stM = ExtAudioFileOpenURL(micUrl, &micIn);
+        if (stA != noErr || stM != noErr || !appIn || !micIn) {
+          NSLog(@"mix: open inputs failed %d %d", (int)stA, (int)stM);
+          if (appIn)
+            ExtAudioFileDispose(appIn);
+          if (micIn)
+            ExtAudioFileDispose(micIn);
+        } else {
+          // Set client formats for reading (Float32 interleaved)
+          AudioStreamBasicDescription readApp = {0};
+          readApp.mSampleRate = 48000.0;
+          readApp.mFormatID = kAudioFormatLinearPCM;
+          readApp.mFormatFlags =
+              kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+          readApp.mFramesPerPacket = 1;
+          readApp.mChannelsPerFrame = 2; // app in stereo
+          readApp.mBitsPerChannel = 32;
+          readApp.mBytesPerFrame =
+              (readApp.mBitsPerChannel / 8) * readApp.mChannelsPerFrame;
+          readApp.mBytesPerPacket =
+              readApp.mBytesPerFrame * readApp.mFramesPerPacket;
+
+          AudioStreamBasicDescription readMic = {0};
+          readMic.mSampleRate = 48000.0;
+          readMic.mFormatID = kAudioFormatLinearPCM;
+          readMic.mFormatFlags =
+              kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+          readMic.mFramesPerPacket = 1;
+          readMic.mChannelsPerFrame = 1; // downmix mic to mono
+          readMic.mBitsPerChannel = 32;
+          readMic.mBytesPerFrame =
+              (readMic.mBitsPerChannel / 8) * readMic.mChannelsPerFrame;
+          readMic.mBytesPerPacket =
+              readMic.mBytesPerFrame * readMic.mFramesPerPacket;
+
+          ExtAudioFileSetProperty(appIn, kExtAudioFileProperty_ClientDataFormat,
+                                  sizeof(readApp), &readApp);
+          ExtAudioFileSetProperty(micIn, kExtAudioFileProperty_ClientDataFormat,
+                                  sizeof(readMic), &readMic);
+
+          // First pass: measure RMS for app and mic
+          const UInt32 kFrames = 4096;
+          UInt32 appBufBytes1 = kFrames * readApp.mBytesPerFrame;
+          UInt32 micBufBytes1 = kFrames * readMic.mBytesPerFrame;
+          float *appBuf1 = (float *)malloc(appBufBytes1);
+          float *micBuf1 = (float *)malloc(micBufBytes1);
+          AudioBufferList appAbl1;
+          appAbl1.mNumberBuffers = 1;
+          appAbl1.mBuffers[0].mNumberChannels = readApp.mChannelsPerFrame;
+          appAbl1.mBuffers[0].mDataByteSize = appBufBytes1;
+          appAbl1.mBuffers[0].mData = appBuf1;
+          AudioBufferList micAbl1;
+          micAbl1.mNumberBuffers = 1;
+          micAbl1.mBuffers[0].mNumberChannels = readMic.mChannelsPerFrame;
+          micAbl1.mBuffers[0].mDataByteSize = micBufBytes1;
+          micAbl1.mBuffers[0].mData = micBuf1;
+          double appSumSq = 0.0, micSumSq = 0.0;
+          uint64_t appCount = 0, micCount = 0;
+          while (1) {
+            UInt32 framesA = kFrames, framesM = kFrames;
+            OSStatus ra = ExtAudioFileRead(appIn, &framesA, &appAbl1);
+            OSStatus rm = ExtAudioFileRead(micIn, &framesM, &micAbl1);
+            if (ra != noErr || rm != noErr) {
+              break;
+            }
+            if (framesA == 0 && framesM == 0)
+              break;
+            for (UInt32 i = 0; i < framesA; ++i) {
+              float L = appBuf1[i * 2 + 0];
+              float R = appBuf1[i * 2 + 1];
+              float m = 0.5f * (L + R);
+              appSumSq += (double)m * (double)m;
+            }
+            appCount += framesA;
+            for (UInt32 i = 0; i < framesM; ++i) {
+              float s = micBuf1[i];
+              micSumSq += (double)s * (double)s;
+            }
+            micCount += framesM;
+          }
+          double appRms =
+              (appCount > 0) ? sqrt(appSumSq / (double)appCount) : 0.0;
+          double micRms =
+              (micCount > 0) ? sqrt(micSumSq / (double)micCount) : 0.0;
+          if (appBuf1)
+            free(appBuf1);
+          if (micBuf1)
+            free(micBuf1);
+          ExtAudioFileDispose(appIn);
+          appIn = NULL;
+          ExtAudioFileDispose(micIn);
+          micIn = NULL;
+
+          // Reopen inputs for mixing pass
+          stA = ExtAudioFileOpenURL(appUrl, &appIn);
+          stM = ExtAudioFileOpenURL(micUrl, &micIn);
+          if (stA != noErr || stM != noErr || !appIn || !micIn) {
+            NSLog(@"mix: reopen inputs failed %d %d", (int)stA, (int)stM);
+          } else {
+            ExtAudioFileSetProperty(appIn,
+                                    kExtAudioFileProperty_ClientDataFormat,
+                                    sizeof(readApp), &readApp);
+            ExtAudioFileSetProperty(micIn,
+                                    kExtAudioFileProperty_ClientDataFormat,
+                                    sizeof(readMic), &readMic);
+
+            // Create output (Int16 stereo)
+            AudioStreamBasicDescription outAsbd = {0};
+            outAsbd.mSampleRate = 48000.0;
+            outAsbd.mFormatID = kAudioFormatLinearPCM;
+            outAsbd.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger |
+                                   kLinearPCMFormatFlagIsPacked;
+            outAsbd.mFramesPerPacket = 1;
+            outAsbd.mChannelsPerFrame = 2;
+            outAsbd.mBitsPerChannel = 16;
+            outAsbd.mBytesPerFrame =
+                (outAsbd.mBitsPerChannel / 8) * outAsbd.mChannelsPerFrame;
+            outAsbd.mBytesPerPacket =
+                outAsbd.mBytesPerFrame * outAsbd.mFramesPerPacket;
+
+            CFURLRef outUrl =
+                (__bridge CFURLRef)[NSURL fileURLWithPath:mixPath];
+            OSStatus stO = ExtAudioFileCreateWithURL(
+                outUrl, kAudioFileWAVEType, &outAsbd, NULL,
+                kAudioFileFlags_EraseFile, &outFile);
+            if (stO != noErr || !outFile) {
+              NSLog(@"mix: create out failed %d", (int)stO);
+            } else {
+              // Compute per-source gains: gently lift quieter source
+              float appGain = 1.0f, micGain = 1.0f;
+              if (appRms > 0.0 && micRms > 0.0) {
+                double ratio = micRms / appRms; // if app is quieter, ratio > 1
+                if (ratio < 0.5)
+                  ratio = 0.5; // -6 dB min
+                if (ratio > 2.0)
+                  ratio = 2.0;                 // +6 dB max
+                appGain = (float)ratio * 0.8f; // modest boost with padding
+              }
+              // Soften mic a bit
+              micGain = 0.6f;
+              // Extra headroom
+              const float postAtten = 0.6f;
+
+              const UInt32 kFrames2 = 2048;
+              UInt32 appBufBytes = kFrames2 * readApp.mBytesPerFrame;
+              UInt32 micBufBytes = kFrames2 * readMic.mBytesPerFrame;
+              float *appBuf = (float *)malloc(appBufBytes);
+              float *micBuf = (float *)malloc(micBufBytes);
+              UInt32 outBufBytes = kFrames2 * outAsbd.mBytesPerFrame;
+              int16_t *outBuf = (int16_t *)malloc(outBufBytes);
+
+              AudioBufferList appAbl;
+              appAbl.mNumberBuffers = 1;
+              appAbl.mBuffers[0].mNumberChannels = readApp.mChannelsPerFrame;
+              appAbl.mBuffers[0].mDataByteSize = appBufBytes;
+              appAbl.mBuffers[0].mData = appBuf;
+              AudioBufferList micAbl;
+              micAbl.mNumberBuffers = 1;
+              micAbl.mBuffers[0].mNumberChannels = readMic.mChannelsPerFrame;
+              micAbl.mBuffers[0].mDataByteSize = micBufBytes;
+              micAbl.mBuffers[0].mData = micBuf;
+              AudioBufferList outAbl;
+              outAbl.mNumberBuffers = 1;
+              outAbl.mBuffers[0].mNumberChannels = outAsbd.mChannelsPerFrame;
+              outAbl.mBuffers[0].mDataByteSize = outBufBytes;
+              outAbl.mBuffers[0].mData = outBuf;
+
+              while (1) {
+                UInt32 framesA = kFrames2;
+                UInt32 framesM = kFrames2;
+                OSStatus ra2 = ExtAudioFileRead(appIn, &framesA, &appAbl);
+                OSStatus rm2 = ExtAudioFileRead(micIn, &framesM, &micAbl);
+                if (ra2 != noErr || rm2 != noErr) {
+                  NSLog(@"mix: read err %d %d", (int)ra2, (int)rm2);
+                  break;
+                }
+                if (framesA == 0 && framesM == 0)
+                  break;
+                UInt32 frames = framesA > framesM ? framesA : framesM;
+                for (UInt32 i = 0; i < frames; ++i) {
+                  float appL = 0.0f, appR = 0.0f;
+                  if (i < framesA) {
+                    appL = appBuf[i * 2 + 0];
+                    appR = appBuf[i * 2 + 1];
+                  }
+                  float micS = 0.0f;
+                  if (i < framesM) {
+                    micS = micBuf[i];
+                  }
+                  float outL = (appL * appGain + micS * micGain) * postAtten;
+                  float outR = (appR * appGain + micS * micGain) * postAtten;
+                  if (outL > 1.0f)
+                    outL = 1.0f;
+                  if (outL < -1.0f)
+                    outL = -1.0f;
+                  if (outR > 1.0f)
+                    outR = 1.0f;
+                  if (outR < -1.0f)
+                    outR = -1.0f;
+                  outBuf[i * 2 + 0] = (int16_t)(outL * 32767.0f);
+                  outBuf[i * 2 + 1] = (int16_t)(outR * 32767.0f);
+                }
+                outAbl.mBuffers[0].mDataByteSize =
+                    frames * outAsbd.mBytesPerFrame;
+                OSStatus wr = ExtAudioFileWrite(outFile, frames, &outAbl);
+                if (wr != noErr) {
+                  NSLog(@"mix: write err %d", (int)wr);
+                  break;
+                }
+              }
+
+              if (appBuf)
+                free(appBuf);
+              if (micBuf)
+                free(micBuf);
+              if (outBuf)
+                free(outBuf);
+            }
+            if (outFile)
+              ExtAudioFileDispose(outFile);
+          }
+          if (appIn)
+            ExtAudioFileDispose(appIn);
+          if (micIn)
+            ExtAudioFileDispose(micIn);
+        }
+      }
+    } @catch (NSException *ex) {
+      NSLog(@"mix exception: %@", ex.reason);
+    }
   }
 }
 
