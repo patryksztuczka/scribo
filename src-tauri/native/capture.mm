@@ -252,30 +252,9 @@ static SCRunningApplication *findApp(NSArray<SCRunningApplication *> *apps,
   return nil;
 }
 
-static SCWindow *findWindow(NSArray<SCWindow *> *windows, NSString *idStr)
-    API_AVAILABLE(macos(12.3)) {
-  uint64_t wid = (uint64_t)[idStr longLongValue];
-  for (SCWindow *w in windows) {
-    if (w.windowID == wid)
-      return w;
-  }
-  return nil;
-}
-
-static SCDisplay *findDisplay(NSArray<SCDisplay *> *displays, NSString *idStr)
-    API_AVAILABLE(macos(12.3)) {
-  uint32_t did = (uint32_t)[idStr intValue];
-  for (SCDisplay *d in displays) {
-    if (d.displayID == did)
-      return d;
-  }
-  return nil;
-}
-
-bool sc_start_capture(const char *kind, const char *id, const char *out_path,
-                      char **out_err) {
+bool sc_start_capture(const char *id, char **out_err) {
   @autoreleasepool {
-    if (!kind || !id || !out_path) {
+    if (!id) {
       if (out_err)
         *out_err = dup_cstr("invalid arguments");
       return false;
@@ -291,9 +270,32 @@ bool sc_start_capture(const char *kind, const char *id, const char *out_path,
       return false;
     }
 
-    NSString *kindStr = [NSString stringWithUTF8String:kind];
     NSString *idStr = [NSString stringWithUTF8String:id];
-    NSString *path = [NSString stringWithUTF8String:out_path];
+    // Build fixed base dir: ~/Library/Application Support/scribo
+    NSString *home = NSHomeDirectory();
+    NSString *baseDir = [home
+        stringByAppendingPathComponent:@"Library/Application Support/scribo"];
+    // Ensure base dir exists
+    NSError *mkErr = nil;
+    [[NSFileManager defaultManager] createDirectoryAtPath:baseDir
+                              withIntermediateDirectories:YES
+                                               attributes:nil
+                                                    error:&mkErr];
+    if (mkErr) {
+      if (out_err)
+        *out_err = dup_cstr([[NSString
+            stringWithFormat:@"mkdir failed: %@",
+                             mkErr.localizedDescription ?: @"unknown"]
+            UTF8String]);
+      return false;
+    }
+    NSString *path = [baseDir
+        stringByAppendingPathComponent:
+            [NSString
+                stringWithFormat:@"capture-%@.wav",
+                                 @((long long)(
+                                     [[NSDate date] timeIntervalSince1970] *
+                                     1000))]];
     if (g_lastOutPath) {
       g_lastOutPath = nil;
     }
@@ -319,45 +321,22 @@ bool sc_start_capture(const char *kind, const char *id, const char *out_path,
       return false;
     }
 
-    SCContentFilter *filter = nil;
-    if ([kindStr isEqualToString:@"application"]) {
-      SCRunningApplication *app = findApp(content.applications, idStr);
-      if (!app) {
-        if (out_err)
-          *out_err = dup_cstr("application not found");
-        return false;
-      }
-      SCDisplay *disp = content.displays.firstObject;
-      if (!disp) {
-        if (out_err)
-          *out_err = dup_cstr("no displays available");
-        return false;
-      }
-      filter = [[SCContentFilter alloc] initWithDisplay:disp
-                                  includingApplications:@[ app ]
-                                       exceptingWindows:@[]];
-    } else if ([kindStr isEqualToString:@"window"]) {
-      SCWindow *win = findWindow(content.windows, idStr);
-      if (!win) {
-        if (out_err)
-          *out_err = dup_cstr("window not found");
-        return false;
-      }
-      filter = [[SCContentFilter alloc] initWithDesktopIndependentWindow:win];
-    } else if ([kindStr isEqualToString:@"display"]) {
-      SCDisplay *disp = findDisplay(content.displays, idStr);
-      if (!disp) {
-        if (out_err)
-          *out_err = dup_cstr("display not found");
-        return false;
-      }
-      filter = [[SCContentFilter alloc] initWithDisplay:disp
-                                       excludingWindows:@[]];
-    } else {
+    // Always capture application audio (id = PID or bundleId)
+    SCRunningApplication *app = findApp(content.applications, idStr);
+    if (!app) {
       if (out_err)
-        *out_err = dup_cstr("unknown kind");
+        *out_err = dup_cstr("application not found");
       return false;
     }
+    SCDisplay *disp = content.displays.firstObject;
+    if (!disp) {
+      if (out_err)
+        *out_err = dup_cstr("no displays available");
+      return false;
+    }
+    SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:disp
+                                                 includingApplications:@[ app ]
+                                                      exceptingWindows:@[]];
 
     NSError *fileErr = nil;
     if (!ensureAudioFileAtPath(path, &fileErr)) {

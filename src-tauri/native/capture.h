@@ -6,12 +6,13 @@
 extern "C" {
 #endif
 
-// Starts audio capture for given kind ("application" | "window" | "display")
-// and id. id: for application -> PID or bundleId, for window -> windowID, for
-// display -> displayID out_path: absolute path to output .wav On error returns
-// false and sets *out_err to a heap-allocated UTF-8 string (must call sc_free).
-bool sc_start_capture(const char *kind, const char *id, const char *out_path,
-                      char **out_err);
+// Starts audio capture for the given source id.
+// NOTE (macOS): We always capture application audio and save under
+//   "~/Library/Application Support/scribo/capture-<timestamp>.wav".
+// id: application PID or bundleId
+// On error returns false and sets *out_err to a heap-allocated UTF-8 string
+// (must call sc_free).
+bool sc_start_capture(const char *id, char **out_err);
 
 // Stops ongoing capture if any. Safe to call if not running.
 void sc_stop_capture();

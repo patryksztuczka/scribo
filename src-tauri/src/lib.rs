@@ -6,12 +6,7 @@ extern "C" {
     fn hello_from_cpp() -> *const c_char;
     fn free_str(s: *const c_char);
     fn list_sources_json() -> *const c_char;
-    fn sc_start_capture(
-        kind: *const c_char,
-        id: *const c_char,
-        out_path: *const c_char,
-        out_err: *mut *mut c_char,
-    ) -> bool;
+    fn sc_start_capture(id: *const c_char, out_err: *mut *mut c_char) -> bool;
     fn sc_stop_capture();
     fn sc_free(s: *mut c_char);
     fn sc_list_input_devices() -> *mut c_char;
@@ -78,19 +73,10 @@ fn list_input_devices() -> Result<Vec<InputDevice>, String> {
 }
 
 #[tauri::command]
-fn start_capture(kind: String, id: String, out_path: String) -> Result<(), String> {
-    let kind_c = CString::new(kind).map_err(|_| "invalid kind".to_string())?;
+fn start_capture(id: String) -> Result<(), String> {
     let id_c = CString::new(id).map_err(|_| "invalid id".to_string())?;
-    let path_c = CString::new(out_path).map_err(|_| "invalid out_path".to_string())?;
     let mut err_ptr: *mut c_char = std::ptr::null_mut();
-    let ok = unsafe {
-        sc_start_capture(
-            kind_c.as_ptr(),
-            id_c.as_ptr(),
-            path_c.as_ptr(),
-            &mut err_ptr,
-        )
-    };
+    let ok = unsafe { sc_start_capture(id_c.as_ptr(), &mut err_ptr) };
     if ok {
         Ok(())
     } else {

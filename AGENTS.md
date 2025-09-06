@@ -1,6 +1,13 @@
-# Foodie - Calorie Counter Application (Vite, React, Node, Express, Monorepo, Tailwind, Zod)
+# Scribo — Audio Capture, Transcription, and Summaries (Tauri, React, Rust, Tailwind, Zod)
 
 This document defines the rules we strictly follow to keep the codebase readable, maintainable, reliable, and pragmatic. The philosophy is functional-first: pure logic at the core, side effects at the edges.
+
+Scribo is a desktop app that:
+
+- Captures audio from selected applications and microphones (system + mic).
+- Produces transcriptions and concise summaries from those recordings.
+
+Frontend is React/Vite. Native surface is Tauri (Rust + platform native). All cross-boundary data is validated.
 
 ## Core principles
 
@@ -32,38 +39,48 @@ This document defines the rules we strictly follow to keep the codebase readable
 
 ## App-specific practices
 
-- Server: see `apps/server/AGENTS.md`
-- Client: see `apps/client/AGENTS.md`
+- Native backend (Tauri/Rust): see `src-tauri/AGENTS.md`
+- Frontend (React/Vite): see `src/AGENTS.md`
+
+Domain notes:
+
+- Audio capture and processing are side effects. Keep the core logic (selection, scheduling, chunking, summarization prompts) as pure functions.
 
 ## Security Baselines
 
-- Validate all inputs from clients, env, and external APIs. Never trust strings.
-- Redact secrets in logs. Never log tokens, cookies, or Authorization headers.
-- Enforce CORS/origin checks for HTTP surfaces where applicable. Bind to localhost for local servers.
+- Validate all inputs from the renderer, env, and external APIs. Never trust strings.
+- Never start recording without explicit user intent. Always show a visible recording indicator in the UI.
+- Store audio and transcripts locally by default (e.g., under the user's downloads directory `scribo/`).
+- Redact secrets in logs. Never log file contents, transcripts, or authorization headers.
+- Sanitize and restrict file-system access. Only allow writes within an allowlisted base directory.
+- If remote APIs are used for transcription, clearly surface network usage, and remove any PII before sending when applicable.
 
 ## Performance and Pragmatism
 
-- Avoid premature optimization and caching. Measure first; optimize only hotspots.
+- Avoid premature optimization. Measure first (capture overhead, transcription throughput, UI responsiveness).
 - Keep modules small. Split when files exceed reasonable cognitive load.
-- Prefer streaming or pagination for large data.
+- Prefer streaming where possible (e.g., incremental transcription UI updates).
+- Prefer mono 16 kHz PCM for ASR when compatible to reduce bandwidth and processing.
+- Throttle/animate meters efficiently; avoid tight loops on the UI thread.
 
 ## Typical mistakes to avoid
 
 - Using any or implicit any, weakening strictness, or bypassing type errors instead of fixing design.
 - Sequential await in loops when work is independent; ignoring timeouts and cancellation.
-- Logging unstructured strings, secrets, or excessive data; hindering observability.
-- Overengineering generic abstractions and utility layers before real use cases exist.
-- Creating classes for simple data transformations that are better expressed as pure functions.
+- Invoking Tauri commands deep inside presentational components instead of via a thin bridge.
+- Forgetting to stop capture on errors/window close; leaking file handles or threads.
+- Logging unstructured strings, secrets, transcripts, or excessive data.
+- Overengineering abstractions before real use cases exist.
 
 ## Implementation Checklist
 
-- Inputs validated with Zod at boundaries; outputs typed and validated where practical.
-- Pure functions for core logic; side effects isolated in thin adapters.
-- Timeouts and AbortSignal wired through I/O calls; no unbounded awaits.
-- Structured logging with stable keys; no console noise.
-- MCP tools register inputSchema and outputSchema; errors set isError: true.
+- Inputs validated with Zod at TS boundaries and with Rust types/Zod-equivalent checks on the native side.
+- Pure functions for core UI logic; side effects isolated in a `data-access-layer` and Rust commands.
+- Long-running native operations (capture/transcribe) are cancellable; provide a `stop` command and handle cleanup.
+- Structured logging with stable keys; redact content; no console noise.
 - No usage of any; minimal unknown with prompt narrowing.
 - No dead code; remove scaffolding and examples not in use.
+- Persist files only under the app's allowlisted directory; sanitize user-supplied paths.
 
 ## Naming conventions
 
@@ -74,4 +91,4 @@ This document defines the rules we strictly follow to keep the codebase readable
 ## Imports
 
 - While importing things from other files, use .ts extension at the end
-- If imported value is used only as a type, alywas add `type` key word (e.g., `import { type User } from ./schemas/user.ts`)
+- If imported value is used only as a type, always add `type` keyword (e.g., `import { type User } from './schemas/user.ts'`)
