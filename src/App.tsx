@@ -1,15 +1,64 @@
 import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
+import { downloadDir, join } from "@tauri-apps/api/path";
 import "./App.css";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [sources, setSources] = useState<any | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<{ kind: string; id: string } | null>(
+    null
+  );
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [mics, setMics] = useState<any[] | null>(null);
+  const [selectedMic, setSelectedMic] = useState<string | null>(null);
 
   async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+    setGreetMsg(await invoke("hello_cpp"));
+  }
+
+  async function loadSources() {
+    setError(null);
+    try {
+      const result = await invoke("list_sources");
+      setSources(result);
+      const micList: any = await invoke("list_input_devices");
+      setMics(micList);
+    } catch (e: any) {
+      setError(e?.toString?.() ?? "Unknown error");
+    }
+  }
+
+  async function start() {
+    if (!selected) {
+      setError("Select a source first");
+      return;
+    }
+    setError(null);
+    try {
+      // Save into Downloads/scribo (native ensures folder exists)
+      const dir = await downloadDir();
+      const base = await join(dir, "scribo");
+      const file = await join(base, `capture-${Date.now()}.wav`);
+      await invoke("start_capture", {
+        kind: selected.kind,
+        id: selected.id,
+        outPath: file,
+      });
+      setIsCapturing(true);
+    } catch (e: any) {
+      setError(e?.toString?.() ?? "Unknown error");
+    }
+  }
+
+  async function stop() {
+    try {
+      await invoke("stop_capture");
+    } finally {
+      setIsCapturing(false);
+    }
   }
 
   return (
@@ -36,14 +85,117 @@ function App() {
           greet();
         }}
       >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
+        <input id="greet-input" placeholder="Enter a name..." />
         <button type="submit">Greet</button>
       </form>
       <p>{greetMsg}</p>
+      <div className="row" style={{ gap: 8 }}>
+        <button onClick={loadSources}>Load Sources</button>
+        {error && <span style={{ color: "red" }}>{error}</span>}
+      </div>
+      {sources && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr 1fr 1fr",
+            gap: 16,
+            marginTop: 16,
+          }}
+        >
+          <div>
+            <h3>Displays</h3>
+            <ul>
+              {(sources.displays || []).map((d: any) => (
+                <li key={`d-${d.id}`}>
+                  <label style={{ cursor: "pointer" }}>
+                    <input
+                      type="radio"
+                      name="source"
+                      onChange={() =>
+                        setSelected({ kind: "display", id: String(d.id) })
+                      }
+                    />
+                    {d.name ?? `Display ${d.id}`}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3>Windows</h3>
+            <ul>
+              {(sources.windows || []).map((w: any) => (
+                <li key={`w-${w.id}`}>
+                  <label style={{ cursor: "pointer" }}>
+                    <input
+                      type="radio"
+                      name="source"
+                      onChange={() =>
+                        setSelected({ kind: "window", id: String(w.id) })
+                      }
+                    />
+                    {w.title || "(no title)"}{" "}
+                    {w.appName ? `- ${w.appName}` : ""}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3>Applications</h3>
+            <ul>
+              {(sources.applications || []).map((a: any) => (
+                <li key={`a-${a.pid}`}>
+                  <label style={{ cursor: "pointer" }}>
+                    <input
+                      type="radio"
+                      name="source"
+                      onChange={() =>
+                        setSelected({ kind: "application", id: String(a.pid) })
+                      }
+                    />
+                    {a.name || a.bundleId || a.pid}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h3>Microphones</h3>
+            <ul>
+              {(mics || []).map((d: any) => (
+                <li key={`mic-${d.id}`}>
+                  <label style={{ cursor: "pointer" }}>
+                    <input
+                      type="radio"
+                      name="mic"
+                      onChange={() => setSelectedMic(String(d.id))}
+                    />
+                    {d.name || d.uniqueId}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+      {selected && (
+        <p>
+          Selected: {selected.kind} #{selected.id}
+        </p>
+      )}
+      {selectedMic && <p>Mic: {selectedMic}</p>}
+      <div className="row" style={{ gap: 8, marginTop: 16 }}>
+        <button onClick={start} disabled={!selected || isCapturing}>
+          Start capture
+        </button>
+        <button onClick={stop} disabled={!isCapturing}>
+          Stop capture
+        </button>
+        {isCapturing && (
+          <span>Recording to Downloads/scribo (timestamped)…</span>
+        )}
+      </div>
     </main>
   );
 }
