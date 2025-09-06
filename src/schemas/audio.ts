@@ -19,3 +19,13 @@ export const InputDeviceItemSchema = z.object({
 export const InputDeviceListSchema = z.array(InputDeviceItemSchema);
 
 export type InputDeviceItem = z.infer<typeof InputDeviceItemSchema>;
+
+export const RecordingItemSchema = z.object({
+  path: z.string(),
+  fileName: z.string(),
+  createdAtMs: z.number().int(),
+});
+
+export const RecordingListSchema = z.array(RecordingItemSchema);
+
+export type RecordingItem = z.infer<typeof RecordingItemSchema>;

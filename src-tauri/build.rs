@@ -1,13 +1,4 @@
 fn main() {
-    // najpierw kompilujemy C++ (np. hello.cpp)
-    let mut build_cpp = cc::Build::new();
-    build_cpp
-        .cpp(true)
-        .file("native/hello.cpp")
-        .flag_if_supported("-std=c++17");
-    build_cpp.compile("hello");
-
-    // następnie Objective-C++ (ScreenCaptureKit)
     let mut build_objcpp = cc::Build::new();
     build_objcpp
         .cpp(true)
@@ -17,8 +8,6 @@ fn main() {
         .flag_if_supported("-fobjc-arc");
     build_objcpp.compile("sources");
 
-    println!("cargo:rerun-if-changed=native/hello.h");
-    println!("cargo:rerun-if-changed=native/hello.cpp");
     println!("cargo:rerun-if-changed=native/sources.h");
     println!("cargo:rerun-if-changed=native/sources.mm");
     println!("cargo:rerun-if-changed=native/capture.h");
