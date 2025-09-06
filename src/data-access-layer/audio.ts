@@ -1,5 +1,11 @@
 import { invoke } from '@tauri-apps/api/core';
-import { AppListSchema, InputDeviceListSchema, RecordingListSchema } from '../schemas/audio.ts';
+import {
+  AppListSchema,
+  InputDeviceListSchema,
+  RecordingListSchema,
+  RecordingPathSchema,
+  DataUrlSchema,
+} from '../schemas/audio.ts';
 
 export const getApplications = async () => {
   const applications = await invoke('list_apps');
@@ -25,6 +31,12 @@ export const getRecordings = async () => {
 };
 
 export const getRecordingDataUrl = async (path: string) => {
-  const url = await invoke<string>('get_recording_data_url', { path });
-  return url;
+  const safePath = RecordingPathSchema.parse(path);
+  const url = await invoke('get_recording_data_url', { path: safePath });
+  return DataUrlSchema.parse(url);
+};
+
+export const deleteRecording = async (path: string) => {
+  const safePath = RecordingPathSchema.parse(path);
+  await invoke('delete_recording', { path: safePath });
 };

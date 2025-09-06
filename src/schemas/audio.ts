@@ -29,3 +29,11 @@ export const RecordingItemSchema = z.object({
 export const RecordingListSchema = z.array(RecordingItemSchema);
 
 export type RecordingItem = z.infer<typeof RecordingItemSchema>;
+
+// Defensive validation for actions
+export const RecordingPathSchema = z
+  .string()
+  .min(1)
+  .refine((p) => p.endsWith('-mix.wav'), 'Recording path must end with -mix.wav');
+
+export const DataUrlSchema = z.string().refine((s) => s.startsWith('data:audio/wav;base64,'), 'Invalid audio data URL');

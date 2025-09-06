@@ -746,6 +746,33 @@ void sc_stop_capture() {
           if (micIn)
             ExtAudioFileDispose(micIn);
         }
+        // If mix file exists and is non-empty, remove the partial inputs
+        @try {
+          NSFileManager *fm = [NSFileManager defaultManager];
+          NSError *attrErr = nil;
+          NSDictionary<NSFileAttributeKey, id> *attrs =
+              [fm attributesOfItemAtPath:mixPath error:&attrErr];
+          if (attrs && [attrs fileSize] > 0) {
+            NSError *rmErrA = nil;
+            if ([fm fileExistsAtPath:appPath]) {
+              [fm removeItemAtPath:appPath error:&rmErrA];
+              if (rmErrA) {
+                NSLog(@"remove appPath failed: %@",
+                      rmErrA.localizedDescription);
+              }
+            }
+            NSError *rmErrM = nil;
+            if ([fm fileExistsAtPath:micPath]) {
+              [fm removeItemAtPath:micPath error:&rmErrM];
+              if (rmErrM) {
+                NSLog(@"remove micPath failed: %@",
+                      rmErrM.localizedDescription);
+              }
+            }
+          }
+        } @catch (NSException *ex) {
+          NSLog(@"cleanup exception: %@", ex.reason);
+        }
       }
     } @catch (NSException *ex) {
       NSLog(@"mix exception: %@", ex.reason);

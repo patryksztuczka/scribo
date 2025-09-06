@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getApplications, getInputDevices, startCapture, stopCapture } from '../data-access-layer/audio';
 
 export const AudioSourceSelector = () => {
+  const queryClient = useQueryClient();
   const { data: apps } = useQuery({
     queryKey: ['apps'],
     queryFn: getApplications,
@@ -24,6 +25,7 @@ export const AudioSourceSelector = () => {
     mutationFn: stopCapture,
     onSuccess: () => {
       setIsCapturing(false);
+      void queryClient.invalidateQueries({ queryKey: ['recordings'] });
     },
     onError: (error) => {
       setError(error.message);

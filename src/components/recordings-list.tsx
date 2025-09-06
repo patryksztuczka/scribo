@@ -1,20 +1,32 @@
-import { useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { getRecordings } from '../data-access-layer/audio.ts';
-import { getRecordingDataUrl } from '../data-access-layer/audio.ts';
+import { useRef, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+
+import { getRecordings, getRecordingDataUrl, deleteRecording } from '../data-access-layer/audio.ts';
 
 export const RecordingsList = () => {
-  const { data, refetch, isLoading, error } = useQuery({
+  const {
+    data: recordings,
+    refetch,
+    isLoading,
+    error,
+  } = useQuery({
     queryKey: ['recordings'],
     queryFn: getRecordings,
     refetchOnWindowFocus: false,
+  });
+  const { mutate: deleteRecordingMutation } = useMutation({
+    mutationFn: (path: string) => deleteRecording(path),
+    onSuccess: () => {
+      refetch();
+    },
+    onError: (error) => {
+      setPlayError(error.message);
+    },
   });
 
   const [currentSrc, setCurrentSrc] = useState<string>('');
   const [playError, setPlayError] = useState<string>('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  const recordings = useMemo(() => data || [], [data]);
 
   const onPlay = async (path: string) => {
     setPlayError('');
@@ -48,7 +60,7 @@ export const RecordingsList = () => {
       {error && <div className="text-sm text-red-600">{(error as Error).message}</div>}
       {isLoading && <div className="text-sm text-gray-500">Loading…</div>}
       <ul className="divide-y rounded border">
-        {recordings.map((r) => (
+        {recordings?.map((r) => (
           <li key={r.path} className="flex items-center justify-between px-3 py-2">
             <div className="min-w-0">
               <div className="truncate text-sm font-medium">{r.fileName}</div>
@@ -58,10 +70,16 @@ export const RecordingsList = () => {
               <button className="rounded border px-2 py-1 text-xs" onClick={() => onPlay(r.path)}>
                 Play
               </button>
+              <button
+                className="rounded border px-2 py-1 text-xs text-red-600"
+                onClick={() => deleteRecordingMutation(r.path)}
+              >
+                Delete
+              </button>
             </div>
           </li>
         ))}
-        {recordings.length === 0 && !isLoading && (
+        {recordings?.length === 0 && !isLoading && (
           <li className="px-3 py-2 text-sm text-gray-600">No recordings yet.</li>
         )}
       </ul>
