@@ -1,12 +1,20 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import { downloadDir, join } from "@tauri-apps/api/path";
-import "./App.css";
+import { z } from "zod";
+
+const AppItemSchema = z.object({
+  pid: z.number(),
+  name: z.string(),
+  bundleId: z.string().optional().default(""),
+});
+const AppListSchema = z.array(AppItemSchema);
+
+type AppItem = z.infer<typeof AppItemSchema>;
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
-  const [sources, setSources] = useState<any | null>(null);
+  const [apps, setApps] = useState<AppItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ kind: string; id: string } | null>(
     null
@@ -19,11 +27,12 @@ function App() {
     setGreetMsg(await invoke("hello_cpp"));
   }
 
-  async function loadSources() {
+  async function loadApps() {
     setError(null);
     try {
-      const result = await invoke("list_sources");
-      setSources(result);
+      const raw = await invoke("list_apps");
+      const parsed = AppListSchema.parse(raw);
+      setApps(parsed);
       const micList: any = await invoke("list_input_devices");
       setMics(micList);
     } catch (e: any) {
@@ -38,7 +47,6 @@ function App() {
     }
     setError(null);
     try {
-      // Save into Downloads/scribo (native ensures folder exists)
       const dir = await downloadDir();
       const base = await join(dir, "scribo");
       const file = await join(base, `capture-${Date.now()}.wav`);
@@ -63,88 +71,24 @@ function App() {
 
   return (
     <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input id="greet-input" placeholder="Enter a name..." />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
       <div className="row" style={{ gap: 8 }}>
-        <button onClick={loadSources}>Load Sources</button>
+        <button onClick={loadApps}>Load Apps</button>
         {error && <span style={{ color: "red" }}>{error}</span>}
       </div>
-      {sources && (
+
+      {apps && (
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr 1fr",
+            gridTemplateColumns: "1fr 1fr",
             gap: 16,
             marginTop: 16,
           }}
         >
           <div>
-            <h3>Displays</h3>
-            <ul>
-              {(sources.displays || []).map((d: any) => (
-                <li key={`d-${d.id}`}>
-                  <label style={{ cursor: "pointer" }}>
-                    <input
-                      type="radio"
-                      name="source"
-                      onChange={() =>
-                        setSelected({ kind: "display", id: String(d.id) })
-                      }
-                    />
-                    {d.name ?? `Display ${d.id}`}
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <h3>Windows</h3>
-            <ul>
-              {(sources.windows || []).map((w: any) => (
-                <li key={`w-${w.id}`}>
-                  <label style={{ cursor: "pointer" }}>
-                    <input
-                      type="radio"
-                      name="source"
-                      onChange={() =>
-                        setSelected({ kind: "window", id: String(w.id) })
-                      }
-                    />
-                    {w.title || "(no title)"}{" "}
-                    {w.appName ? `- ${w.appName}` : ""}
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div>
             <h3>Applications</h3>
             <ul>
-              {(sources.applications || []).map((a: any) => (
+              {apps.map((a) => (
                 <li key={`a-${a.pid}`}>
                   <label style={{ cursor: "pointer" }}>
                     <input
@@ -179,12 +123,10 @@ function App() {
           </div>
         </div>
       )}
-      {selected && (
-        <p>
-          Selected: {selected.kind} #{selected.id}
-        </p>
-      )}
+
+      {selected && <p>Selected app PID: {selected.id}</p>}
       {selectedMic && <p>Mic: {selectedMic}</p>}
+
       <div className="row" style={{ gap: 8, marginTop: 16 }}>
         <button onClick={start} disabled={!selected || isCapturing}>
           Start capture

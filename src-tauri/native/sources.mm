@@ -62,29 +62,6 @@ const char *list_sources_json() {
         return make_c_string_from_nsstring(json);
       }
 
-      NSMutableArray *displays = [NSMutableArray array];
-      for (SCDisplay *d in content.displays) {
-        uint32_t did = d.displayID;
-        NSString *name = screenNameForDisplayID(did);
-        NSDictionary *item = @{@"id" : @(did), @"name" : name ?: @""};
-        [displays addObject:item];
-      }
-
-      NSMutableArray *windows = [NSMutableArray array];
-      for (SCWindow *w in content.windows) {
-        NSString *title = w.title ?: @"";
-        SCRunningApplication *app = w.owningApplication;
-        NSNumber *pid = app ? @(app.processID) : @(0);
-        NSString *appName = app.applicationName ?: @"";
-        NSDictionary *item = @{
-          @"id" : @(w.windowID),
-          @"title" : title,
-          @"appName" : appName,
-          @"pid" : pid
-        };
-        [windows addObject:item];
-      }
-
       NSMutableArray *applications = [NSMutableArray array];
       for (SCRunningApplication *a in content.applications) {
         NSString *name = a.applicationName ?: @"";
@@ -95,14 +72,9 @@ const char *list_sources_json() {
               @"bundleId" : bundleId};
         [applications addObject:item];
       }
-
-      NSDictionary *result = @{
-        @"displays" : displays,
-        @"windows" : windows,
-        @"applications" : applications
-      };
+      // Return only applications (JSON array)
       NSError *err = nil;
-      NSData *jsonData = [NSJSONSerialization dataWithJSONObject:result
+      NSData *jsonData = [NSJSONSerialization dataWithJSONObject:applications
                                                          options:0
                                                            error:&err];
       if (!jsonData) {

@@ -17,7 +17,6 @@ extern "C" {
     fn sc_list_input_devices() -> *mut c_char;
 }
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -37,36 +36,23 @@ fn hello_cpp() -> String {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-struct SourcesResult {
+struct AppItem {
+    pid: i32,
+    name: String,
     #[serde(default)]
-    displays: serde_json::Value,
-    #[serde(default)]
-    windows: serde_json::Value,
-    #[serde(default)]
-    applications: serde_json::Value,
-    #[serde(default)]
-    error: Option<String>,
+    bundleId: String,
 }
 
 #[tauri::command]
-fn list_sources() -> Result<SourcesResult, String> {
+fn list_apps() -> Result<Vec<AppItem>, String> {
     unsafe {
         let ptr = list_sources_json();
         if ptr.is_null() {
-            return Err("native list_sources_json returned null".into());
+            return Err("native list returned null".into());
         }
         let json = CStr::from_ptr(ptr).to_string_lossy().into_owned();
         free_str(ptr);
-        match serde_json::from_str::<SourcesResult>(&json) {
-            Ok(mut v) => {
-                if let Some(err) = v.error.clone() {
-                    Err(err)
-                } else {
-                    Ok(v)
-                }
-            }
-            Err(e) => Err(format!("failed to parse JSON from native: {}", e)),
-        }
+        serde_json::from_str::<Vec<AppItem>>(&json).map_err(|e| e.to_string())
     }
 }
 
@@ -89,22 +75,6 @@ fn list_input_devices() -> Result<Vec<InputDevice>, String> {
         sc_free(ptr);
         serde_json::from_str::<Vec<InputDevice>>(&json).map_err(|e| e.to_string())
     }
-}
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![
-            greet,
-            hello_cpp,
-            list_sources,
-            start_capture,
-            stop_capture,
-            list_input_devices
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
 }
 
 #[tauri::command]
@@ -140,4 +110,20 @@ fn start_capture(kind: String, id: String, out_path: String) -> Result<(), Strin
 #[tauri::command]
 fn stop_capture() {
     unsafe { sc_stop_capture() }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            hello_cpp,
+            list_apps,
+            start_capture,
+            stop_capture,
+            list_input_devices
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
