@@ -1,17 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AudioSourceSelector } from './components/audio-source-selector';
-import { RecordingsList } from './components/recordings-list.tsx';
-
-const queryClient = new QueryClient();
+import AppRouterProvider from './providers/router-provider.tsx';
+import AppQueryClientProvider from './providers/query-client-provider.tsx';
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <main className="space-y-8 p-4">
-        <AudioSourceSelector />
-        <RecordingsList />
-      </main>
-    </QueryClientProvider>
+    <AppQueryClientProvider>
+      <AppRouterProvider />
+    </AppQueryClientProvider>
   );
 }
 

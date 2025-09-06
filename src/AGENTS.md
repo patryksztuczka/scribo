@@ -8,7 +8,7 @@ All names are kebab-case. Keep components pure; push side effects to a thin brid
 
 - `src/components/`: Presentational and container components only. No direct `invoke` calls; import bridge functions. Props are explicit and fully typed.
 - `src/hooks/`: Reusable hooks for local UI concerns (e.g., debouncing, visibility, metering animations). No cross-cutting app state.
-- `src/tauri/bridge.ts`: Single module that calls Tauri commands and emits/listens to events. Validates inputs/outputs with Zod and returns typed results.
+- `src/tauri/data-access-layer`: Layer that calls Tauri commands or external APIs.
 - `src/lib/`: Pure domain logic (chunking, prompt builders, transcript post-processing). No I/O.
 - `src/`: App bootstrap (`App.tsx`), entry (`main.tsx`), global styles.
 
@@ -16,14 +16,14 @@ Create `src/tauri/bridge.ts` and `src/lib/` if missing.
 
 ## Components and side-effects
 
-- Do not call Tauri `invoke` directly in components. Wrap each command in `src/tauri/bridge.ts` with Zod-validated I/O.
+- Do not call Tauri `invoke` directly in components. Wrap each command in `src/data-access-layer` with Zod-validated I/O.
 - Keep UI state local; lift only when multiple components need it. Represent long-running operations with explicit state and cancellers.
 - Always show a visible recording indicator while capturing. Disable start controls until inputs are valid.
 
 ### Example bridge wrapper
 
 ```
-// src/tauri/bridge.ts
+// src/data-access-layer/audio.ts
 import { invoke } from '@tauri-apps/api/core';
 import { z } from 'zod';
 
@@ -39,7 +39,6 @@ export async function listApps(): Promise<readonly AppItem[]> {
 ## State, data flow, and validation
 
 - Zod-validate all data from native commands and events at the bridge. Components consume typed values only.
-- Use explicit, discriminated unions for UI states like `idle | listing | capturing | error`.
 - All file paths passed from UI must originate from the allowlisted base directory provided by the bridge. Never accept arbitrary user-supplied paths.
 
 ## Styling
@@ -62,7 +61,6 @@ export async function listApps(): Promise<readonly AppItem[]> {
 
 - Never start recording without explicit user action.
 - Redact secrets and never log transcript contents. Avoid logging large payloads.
-- Restrict FS writes to the allowlisted directory (e.g., `~/Downloads/scribo/`), resolved by the bridge.
 
 ## Scripts
 
