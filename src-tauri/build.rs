@@ -31,6 +31,7 @@ fn main() {
     println!("cargo:rustc-link-lib=framework=CoreMedia");
     println!("cargo:rustc-link-lib=framework=CoreAudio");
     println!("cargo:rustc-link-lib=framework=AudioToolbox");
+    println!("cargo:rustc-link-lib=framework=AVFoundation");
 
     // potem dopiero generujemy build info dla tauri
     tauri_build::build();

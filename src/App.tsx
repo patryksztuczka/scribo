@@ -12,6 +12,8 @@ function App() {
     null
   );
   const [isCapturing, setIsCapturing] = useState(false);
+  const [mics, setMics] = useState<any[] | null>(null);
+  const [selectedMic, setSelectedMic] = useState<string | null>(null);
 
   async function greet() {
     setGreetMsg(await invoke("hello_cpp"));
@@ -22,6 +24,8 @@ function App() {
     try {
       const result = await invoke("list_sources");
       setSources(result);
+      const micList: any = await invoke("list_input_devices");
+      setMics(micList);
     } catch (e: any) {
       setError(e?.toString?.() ?? "Unknown error");
     }
@@ -93,7 +97,7 @@ function App() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
+            gridTemplateColumns: "1fr 1fr 1fr 1fr",
             gap: 16,
             marginTop: 16,
           }}
@@ -156,6 +160,23 @@ function App() {
               ))}
             </ul>
           </div>
+          <div>
+            <h3>Microphones</h3>
+            <ul>
+              {(mics || []).map((d: any) => (
+                <li key={`mic-${d.id}`}>
+                  <label style={{ cursor: "pointer" }}>
+                    <input
+                      type="radio"
+                      name="mic"
+                      onChange={() => setSelectedMic(String(d.id))}
+                    />
+                    {d.name || d.uniqueId}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
       {selected && (
@@ -163,6 +184,7 @@ function App() {
           Selected: {selected.kind} #{selected.id}
         </p>
       )}
+      {selectedMic && <p>Mic: {selectedMic}</p>}
       <div className="row" style={{ gap: 8, marginTop: 16 }}>
         <button onClick={start} disabled={!selected || isCapturing}>
           Start capture

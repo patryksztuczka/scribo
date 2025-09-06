@@ -1,4 +1,5 @@
 #import "capture.h"
+#import <AVFoundation/AVFoundation.h>
 #import <AppKit/AppKit.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <CoreAudio/CoreAudio.h>
@@ -395,5 +396,40 @@ void sc_stop_capture() {
     }
     g_writer = nil;
     g_clientFormatSet.store(false);
+  }
+}
+
+char *sc_list_input_devices() {
+  @autoreleasepool {
+    NSMutableArray *arr = [NSMutableArray array];
+    AVCaptureDeviceDiscoverySession *session = [AVCaptureDeviceDiscoverySession
+        discoverySessionWithDeviceTypes:@[
+          AVCaptureDeviceTypeBuiltInMicrophone
+        ]
+                              mediaType:AVMediaTypeAudio
+                               position:AVCaptureDevicePositionUnspecified];
+    NSArray<AVCaptureDevice *> *devices = session.devices ?: @[];
+    for (AVCaptureDevice *d in devices) {
+      NSString *name = d.localizedName ?: @"";
+      NSString *uid = d.uniqueID ?: @"";
+      NSDictionary *item = @{@"id" : uid, @"name" : name, @"uniqueId" : uid};
+      [arr addObject:item];
+    }
+    NSError *err = nil;
+    NSData *json = [NSJSONSerialization dataWithJSONObject:arr
+                                                   options:0
+                                                     error:&err];
+    NSString *s = nil;
+    if (json) {
+      s = [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
+    } else {
+      s = [NSString stringWithFormat:@"[{\"error\":\"%@\"}]",
+                                     err.localizedDescription ?: @"unknown"];
+    }
+    const char *utf8 = [s UTF8String];
+    size_t len = strlen(utf8);
+    char *out = (char *)malloc(len + 1);
+    memcpy(out, utf8, len + 1);
+    return out;
   }
 }

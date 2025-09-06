@@ -14,6 +14,7 @@ extern "C" {
     ) -> bool;
     fn sc_stop_capture();
     fn sc_free(s: *mut c_char);
+    fn sc_list_input_devices() -> *mut c_char;
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -69,6 +70,27 @@ fn list_sources() -> Result<SourcesResult, String> {
     }
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+struct InputDevice {
+    id: String,
+    name: String,
+    #[serde(default)]
+    uniqueId: String,
+}
+
+#[tauri::command]
+fn list_input_devices() -> Result<Vec<InputDevice>, String> {
+    unsafe {
+        let ptr = sc_list_input_devices();
+        if ptr.is_null() {
+            return Err("native sc_list_input_devices returned null".into());
+        }
+        let json = CStr::from_ptr(ptr).to_string_lossy().into_owned();
+        sc_free(ptr);
+        serde_json::from_str::<Vec<InputDevice>>(&json).map_err(|e| e.to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -78,7 +100,8 @@ pub fn run() {
             hello_cpp,
             list_sources,
             start_capture,
-            stop_capture
+            stop_capture,
+            list_input_devices
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

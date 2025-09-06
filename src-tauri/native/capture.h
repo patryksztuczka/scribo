@@ -19,6 +19,10 @@ void sc_stop_capture();
 // Frees strings returned by sc_start_capture via out_err
 void sc_free(char *s);
 
+// Returns UTF-8 JSON array of input devices: [{ id, name, uniqueId }]
+// Caller must free via sc_free.
+char *sc_list_input_devices();
+
 #ifdef __cplusplus
 }
 #endif
