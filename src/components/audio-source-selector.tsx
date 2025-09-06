@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { downloadDir, join } from "@tauri-apps/api/path";
-import { z } from "zod";
+import { useEffect, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { downloadDir, join } from '@tauri-apps/api/path';
+import { z } from 'zod';
 
 const AppItemSchema = z.object({
   pid: z.number(),
   name: z.string(),
-  bundleId: z.string().optional().default(""),
+  bundleId: z.string().optional().default(''),
 });
 const AppListSchema = z.array(AppItemSchema);
 
@@ -17,25 +17,25 @@ type MicItem = { id: string; name: string; uniqueId?: string };
 export const AudioSourceSelector = () => {
   const [apps, setApps] = useState<AppItem[] | null>(null);
   const [mics, setMics] = useState<MicItem[] | null>(null);
-  const [selectedApp, setSelectedApp] = useState<string>("");
-  const [selectedMic, setSelectedMic] = useState<string>("");
+  const [selectedApp, setSelectedApp] = useState<string>('');
+  const [selectedMic, setSelectedMic] = useState<string>('');
   const [isTesting, setIsTesting] = useState(false);
   const [micLevel, setMicLevel] = useState(45);
   const [systemLevel, setSystemLevel] = useState(60);
   const [testProgress, setTestProgress] = useState(0);
   const [isCapturing, setIsCapturing] = useState(false);
-  const [error, setError] = useState<string>("");
+  const [error, setError] = useState<string>('');
 
   const timerRef = useRef<number | null>(null);
   const animRef = useRef<number | null>(null);
 
   async function loadLists() {
-    setError("");
+    setError('');
     try {
-      const raw = await invoke("list_apps");
+      const raw = await invoke('list_apps');
       const parsed = AppListSchema.parse(raw);
       setApps(parsed);
-      const micRaw: any = await invoke("list_input_devices");
+      const micRaw: any = await invoke('list_input_devices');
       const micList: MicItem[] = Array.isArray(micRaw)
         ? micRaw.map((d: any) => ({
             id: String(d.id),
@@ -45,7 +45,7 @@ export const AudioSourceSelector = () => {
         : [];
       setMics(micList);
     } catch (e: any) {
-      setError(e?.toString?.() ?? "Failed to load devices");
+      setError(e?.toString?.() ?? 'Failed to load devices');
     }
   }
 
@@ -77,12 +77,8 @@ export const AudioSourceSelector = () => {
     timerRef.current = window.setInterval(tick, 100);
 
     const animate = () => {
-      setMicLevel((prev) =>
-        Math.max(0, Math.min(100, prev + (Math.random() * 16 - 8)))
-      );
-      setSystemLevel((prev) =>
-        Math.max(0, Math.min(100, prev + (Math.random() * 16 - 8)))
-      );
+      setMicLevel((prev) => Math.max(0, Math.min(100, prev + (Math.random() * 16 - 8))));
+      setSystemLevel((prev) => Math.max(0, Math.min(100, prev + (Math.random() * 16 - 8))));
       if (isTesting) {
         animRef.current = window.setTimeout(animate, 150) as unknown as number;
       }
@@ -102,29 +98,29 @@ export const AudioSourceSelector = () => {
   }, [isTesting]);
 
   async function startCapture() {
-    setError("");
+    setError('');
     if (!selectedApp) {
-      setError("Wybierz aplikację");
+      setError('Wybierz aplikację');
       return;
     }
     try {
       const dir = await downloadDir();
-      const base = await join(dir, "scribo");
+      const base = await join(dir, 'scribo');
       const file = await join(base, `capture-${Date.now()}.wav`);
-      await invoke("start_capture", {
-        kind: "application",
+      await invoke('start_capture', {
+        kind: 'application',
         id: selectedApp,
         outPath: file,
       });
       setIsCapturing(true);
     } catch (e: any) {
-      setError(e?.toString?.() ?? "Start capture failed");
+      setError(e?.toString?.() ?? 'Start capture failed');
     }
   }
 
   async function stopCapture() {
     try {
-      await invoke("stop_capture");
+      await invoke('stop_capture');
     } catch (e) {
       // ignore
     }
@@ -136,10 +132,7 @@ export const AudioSourceSelector = () => {
       {Array.from({ length: 5 }).map((_, i) => (
         <div
           key={i}
-          className={[
-            "w-1 h-4 rounded-full",
-            i < Math.floor(level / 20) ? "bg-gray-600" : "bg-gray-200",
-          ].join(" ")}
+          className={['h-4 w-1 rounded-full', i < Math.floor(level / 20) ? 'bg-gray-600' : 'bg-gray-200'].join(' ')}
         />
       ))}
     </div>
@@ -150,10 +143,7 @@ export const AudioSourceSelector = () => {
       {Array.from({ length: 20 }).map((_, i) => (
         <div
           key={i}
-          className={[
-            "h-1 rounded-sm",
-            i < Math.floor(progress / 5) ? "bg-gray-600" : "bg-gray-200",
-          ].join(" ")}
+          className={['h-1 rounded-sm', i < Math.floor(progress / 5) ? 'bg-gray-600' : 'bg-gray-200'].join(' ')}
         />
       ))}
     </div>
@@ -162,14 +152,14 @@ export const AudioSourceSelector = () => {
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold">Źródła Audio</h3>
-      {error && <div className="text-red-600 text-sm">{error}</div>}
+      {error && <div className="text-sm text-red-600">{error}</div>}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {/* System Audio */}
         <div className="space-y-3">
           <label className="text-sm font-medium">Dźwięk systemowy</label>
           <select
-            className="w-full border rounded px-3 py-2 text-sm"
+            className="w-full rounded border px-3 py-2 text-sm"
             value={selectedApp}
             onChange={(e) => setSelectedApp(e.target.value)}
           >
@@ -188,9 +178,7 @@ export const AudioSourceSelector = () => {
               <span>Poziom systemu</span>
               <span>{systemLevel}%</span>
             </div>
-            <div className="flex items-center gap-2">
-              {levelBars(systemLevel)}
-            </div>
+            <div className="flex items-center gap-2">{levelBars(systemLevel)}</div>
           </div>
         </div>
 
@@ -198,7 +186,7 @@ export const AudioSourceSelector = () => {
         <div className="space-y-3">
           <label className="text-sm font-medium">Mikrofon</label>
           <select
-            className="w-full border rounded px-3 py-2 text-sm"
+            className="w-full rounded border px-3 py-2 text-sm"
             value={selectedMic}
             onChange={(e) => setSelectedMic(e.target.value)}
           >
@@ -225,35 +213,29 @@ export const AudioSourceSelector = () => {
       {/* Controls */}
       <div className="flex items-center gap-2">
         <button
-          className="px-3 py-2 border rounded text-sm"
+          className="rounded border px-3 py-2 text-sm"
           onClick={startCapture}
           disabled={!selectedApp || isCapturing}
         >
           Start capture
         </button>
-        <button
-          className="px-3 py-2 border rounded text-sm"
-          onClick={stopCapture}
-          disabled={isCapturing === false}
-        >
+        <button className="rounded border px-3 py-2 text-sm" onClick={stopCapture} disabled={isCapturing === false}>
           Stop capture
         </button>
-        {isCapturing && (
-          <span className="text-xs text-gray-600">Recording…</span>
-        )}
+        {isCapturing && <span className="text-xs text-gray-600">Recording…</span>}
       </div>
 
       {/* Test Audio */}
       <div className="space-y-2">
         <button
-          className="px-3 py-2 border rounded text-sm"
+          className="rounded border px-3 py-2 text-sm"
           onClick={handleTestAudio}
           disabled={isTesting || !selectedApp || !selectedMic}
         >
-          {isTesting ? "Testowanie..." : "Testuj Audio"}
+          {isTesting ? 'Testowanie...' : 'Testuj Audio'}
         </button>
         {isTesting && (
-          <div className="space-y-2 border rounded p-2">
+          <div className="space-y-2 rounded border p-2">
             <div className="flex items-center justify-between text-sm">
               <span>Test audio w toku</span>
               <span className="text-xs text-gray-500">3s</span>

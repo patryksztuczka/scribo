@@ -1,4 +1,4 @@
-import { AudioSourceSelector } from "./components/audio-source-selector";
+import { AudioSourceSelector } from './components/audio-source-selector';
 
 function App() {
   return (
