@@ -1,2 +1,0 @@
-# Ignore temporary capture outputs to prevent dev watcher restarts
-src-tauri/tmp/**
