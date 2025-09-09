@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { getRecordings, getRecordingDataUrl, deleteRecording } from '../data-access-layer/audio.ts';
@@ -63,7 +64,15 @@ export const RecordingsList = () => {
         {recordings?.map((r) => (
           <li key={r.path} className="flex items-center justify-between px-3 py-2">
             <div className="min-w-0">
-              <div className="truncate text-sm font-medium">{r.fileName}</div>
+              <div className="truncate text-sm font-medium">
+                <Link
+                  to={`/recordings/${encodeURIComponent(r.path)}`}
+                  className="text-blue-600 hover:underline"
+                  title={r.fileName}
+                >
+                  {r.fileName}
+                </Link>
+              </div>
               <div className="text-xs text-gray-600">{new Date(r.createdAtMs).toLocaleString()}</div>
             </div>
             <div className="flex items-center gap-2">

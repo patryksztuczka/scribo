@@ -5,6 +5,7 @@ import AppLayout from '../components/app-layout.tsx';
 
 const RecordingsPage = lazy(() => import('../components/pages/recordings.tsx'));
 const SettingsPage = lazy(() => import('../components/pages/settings.tsx'));
+const RecordingDetailsPage = lazy(() => import('../components/pages/recording-details.tsx'));
 
 export function AppRouterProvider() {
   return (
@@ -15,6 +16,7 @@ export function AppRouterProvider() {
             <Route path="/" element={<Navigate to="/recordings" replace />} />
             <Route path="/recordings" element={<RecordingsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/recordings/:id" element={<RecordingDetailsPage />} />
             <Route path="*" element={<Navigate to="/recordings" replace />} />
           </Routes>
         </Suspense>
