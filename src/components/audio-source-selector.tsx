@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getApplications, getInputDevices, startCapture, stopCapture } from '../data-access-layer/audio';
+import {
+  loadLastSelectedAppPid,
+  loadLastSelectedMicId,
+  saveLastSelectedAppPid,
+  saveLastSelectedMicId,
+} from '../data-access-layer/audio-preferences.ts';
 
 export const AudioSourceSelector = () => {
   const queryClient = useQueryClient();
@@ -32,10 +38,55 @@ export const AudioSourceSelector = () => {
     },
   });
 
-  const [selectedApp, setSelectedApp] = useState<string>('');
-  const [selectedMic, setSelectedMic] = useState<string>('');
+  const selectedAppQuery = useQuery({
+    queryKey: ['selectedAppPid'],
+    enabled: !!apps?.length,
+    queryFn: loadLastSelectedAppPid,
+    select: (pid) => {
+      if (!pid || !apps) return '';
+      return apps.some((app) => String(app.pid) === pid) ? pid : '';
+    },
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
+
+  const selectedMicQuery = useQuery({
+    queryKey: ['selectedMicId'],
+    enabled: !!mics?.length,
+    queryFn: loadLastSelectedMicId,
+    select: (id) => {
+      if (!id || !mics) return '';
+      return mics.some((mic) => mic.id === id) ? id : '';
+    },
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
   const [isCapturing, setIsCapturing] = useState(false);
   const [error, setError] = useState<string>('');
+
+  const setSelectedAppMutation = useMutation({
+    mutationFn: async (pid: string) => {
+      if (!apps?.some((app) => String(app.pid) === pid)) return '';
+      saveLastSelectedAppPid(pid);
+      return pid;
+    },
+    onSuccess: (pid) => {
+      queryClient.setQueryData(['selectedAppPid'], pid);
+    },
+  });
+
+  const setSelectedMicMutation = useMutation({
+    mutationFn: async (id: string) => {
+      if (!mics?.some((mic) => mic.id === id)) return '';
+      saveLastSelectedMicId(id);
+      return id;
+    },
+    onSuccess: (id) => {
+      queryClient.setQueryData(['selectedMicId'], id);
+    },
+  });
 
   return (
     <div className="space-y-4">
@@ -48,8 +99,8 @@ export const AudioSourceSelector = () => {
           <label className="text-sm font-medium">System audio</label>
           <select
             className="w-full rounded border px-3 py-2 text-sm"
-            value={selectedApp}
-            onChange={(e) => setSelectedApp(e.target.value)}
+            value={selectedAppQuery.data ?? ''}
+            onChange={(e) => setSelectedAppMutation.mutate(e.target.value)}
           >
             <option value="" disabled>
               Pick an application
@@ -67,8 +118,8 @@ export const AudioSourceSelector = () => {
           <label className="text-sm font-medium">Microphone</label>
           <select
             className="w-full rounded border px-3 py-2 text-sm"
-            value={selectedMic}
-            onChange={(e) => setSelectedMic(e.target.value)}
+            value={selectedMicQuery.data ?? ''}
+            onChange={(e) => setSelectedMicMutation.mutate(e.target.value)}
           >
             <option value="" disabled>
               Pick a microphone
@@ -86,8 +137,8 @@ export const AudioSourceSelector = () => {
       <div className="flex items-center gap-2">
         <button
           className="rounded border px-3 py-2 text-sm disabled:opacity-50"
-          onClick={() => startCaptureMutation(selectedApp)}
-          disabled={!selectedApp || isCapturing}
+          onClick={() => startCaptureMutation(selectedAppQuery.data ?? '')}
+          disabled={!selectedAppQuery.data || isCapturing}
         >
           Start capture
         </button>
