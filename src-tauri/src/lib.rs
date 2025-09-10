@@ -1,11 +1,14 @@
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::os::raw::c_char;
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::{fs, path::PathBuf};
 
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine as _;
+mod recordings;
+use recordings::repository as rec_repo;
+use recordings::service as rec_service;
+use recordings::RecordingItem;
 
 extern "C" {
     fn list_sources_json() -> *const c_char;
@@ -19,8 +22,8 @@ extern "C" {
 struct AppItem {
     pid: i32,
     name: String,
-    #[serde(default)]
-    bundleId: String,
+    #[serde(default, rename = "bundleId")]
+    bundle_id: String,
 }
 
 #[tauri::command]
@@ -40,8 +43,8 @@ fn list_apps() -> Result<Vec<AppItem>, String> {
 struct InputDevice {
     id: String,
     name: String,
-    #[serde(default)]
-    uniqueId: String,
+    #[serde(default, rename = "uniqueId")]
+    unique_id: String,
 }
 
 #[tauri::command]
@@ -57,72 +60,17 @@ fn list_input_devices() -> Result<Vec<InputDevice>, String> {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
-struct RecordingItem {
-    path: String,
-    fileName: String,
-    createdAtMs: i64,
-}
-
 #[tauri::command]
 fn list_recordings() -> Result<Vec<RecordingItem>, String> {
-    // Base directory: ~/Library/Application Support/scribo
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let base: PathBuf = PathBuf::from(home)
-        .join("Library")
-        .join("Application Support")
-        .join("scribo");
-
-    let mut items: Vec<RecordingItem> = Vec::new();
-    let rd = match fs::read_dir(&base) {
-        Ok(rd) => rd,
-        Err(_) => return Ok(items),
-    };
-
-    for entry in rd {
-        if let Ok(entry) = entry {
-            let p = entry.path();
-            if p.extension().and_then(|e| e.to_str()) == Some("wav") {
-                if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
-                    if stem.ends_with("-mix") {
-                        let meta = fs::metadata(&p).ok();
-                        let modified: Option<SystemTime> = meta
-                            .as_ref()
-                            .and_then(|m| m.modified().ok())
-                            .or_else(|| meta.as_ref().and_then(|m| m.created().ok()));
-                        let created_ms: i64 = modified
-                            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                            .map(|d| d.as_millis() as i64)
-                            .unwrap_or(0);
-                        let file_name = p
-                            .file_name()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("")
-                            .to_string();
-                        let path_str = p.to_string_lossy().to_string();
-                        items.push(RecordingItem {
-                            path: path_str,
-                            fileName: file_name,
-                            createdAtMs: created_ms,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    items.sort_by(|a, b| b.createdAtMs.cmp(&a.createdAtMs));
-    Ok(items)
+    let conn = rec_repo::get_conn()?;
+    rec_service::seed_if_empty(&conn)?;
+    rec_service::list_recordings(&conn)
 }
 
 #[tauri::command]
 fn get_recording_data_url(path: String) -> Result<String, String> {
     // Allow only files under the app base directory and only .wav
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let base: PathBuf = PathBuf::from(home)
-        .join("Library")
-        .join("Application Support")
-        .join("scribo");
+    let base: PathBuf = rec_repo::app_base_dir()?;
 
     let input_path = PathBuf::from(&path);
     let canon_base = base
@@ -145,11 +93,7 @@ fn get_recording_data_url(path: String) -> Result<String, String> {
 #[tauri::command]
 fn delete_recording(path: String) -> Result<(), String> {
     // Only allow deleting files under base directory and the related siblings
-    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-    let base: PathBuf = PathBuf::from(home)
-        .join("Library")
-        .join("Application Support")
-        .join("scribo");
+    let base: PathBuf = rec_repo::app_base_dir()?;
 
     let target = PathBuf::from(&path);
     let canon_base = base
@@ -186,6 +130,11 @@ fn delete_recording(path: String) -> Result<(), String> {
     let _ = fs::remove_file(&app_path);
     let _ = fs::remove_file(&mic_path);
     let _ = fs::remove_file(&mix_path);
+
+    // Remove row for the mix file from DB
+    if let Ok(conn) = rec_repo::get_conn() {
+        let _ = rec_service::delete_recording(&conn, &mix_path.to_string_lossy());
+    }
     Ok(())
 }
 
@@ -213,6 +162,11 @@ fn start_capture(id: String) -> Result<(), String> {
 #[tauri::command]
 fn stop_capture() {
     unsafe { sc_stop_capture() }
+    if let Ok(conn) = rec_repo::get_conn() {
+        if let Some(p) = rec_service::find_latest_mix_file() {
+            let _ = rec_repo::insert_recording_from_path(&conn, &p);
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
