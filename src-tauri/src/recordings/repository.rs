@@ -78,16 +78,6 @@ pub fn delete_by_path(conn: &Connection, file_path: &str) -> Result<(), String> 
     Ok(())
 }
 
-pub fn count(conn: &Connection) -> Result<i64, String> {
-    let mut stmt = conn
-        .prepare("SELECT COUNT(1) FROM recordings")
-        .map_err(|e| e.to_string())?;
-    let count: i64 = stmt
-        .query_row([], |row| row.get(0))
-        .map_err(|e| e.to_string())?;
-    Ok(count)
-}
-
 pub fn list(conn: &Connection) -> Result<Vec<RecordingRow>, String> {
     let mut stmt = conn
         .prepare(

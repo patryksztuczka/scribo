@@ -63,7 +63,6 @@ fn list_input_devices() -> Result<Vec<InputDevice>, String> {
 #[tauri::command]
 fn list_recordings() -> Result<Vec<RecordingItem>, String> {
     let conn = rec_repo::get_conn()?;
-    rec_service::seed_if_empty(&conn)?;
     rec_service::list_recordings(&conn)
 }
 
